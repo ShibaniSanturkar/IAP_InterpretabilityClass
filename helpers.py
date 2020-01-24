@@ -53,6 +53,7 @@ def load_dataset(dataset, batch_size, num_workers=1, data_path='./data'):
     _, loader = ds.make_loaders(num_workers, batch_size)
     normalization = helpers.InputNormalize(ds.mean, ds.std)
     label_map = CLASS_DICT['ImageNet'] if dataset == 'imagenet' else CLASS_DICT['RestrictedImageNet']
+    label_map = {k: v.split(',')[0] for k, v in label_map.items()}
     return ds, loader, normalization, label_map
 
 def forward_pass(mod, im, normalization=None):
