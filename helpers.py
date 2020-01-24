@@ -7,7 +7,16 @@ from robustness import model_utils, datasets
 from tqdm import tqdm
 
 def load_model(arch, dataset=None):
-        
+    '''
+    Load pretrained model with specified architecture.
+    Args:
+        arch (str): name of one of the pytorch pretrained models or 
+                    "robust" for robust model
+        dataset (dataset object): not None only for robust model
+    Returns:
+        model: loaded model
+    '''
+    
     if arch != 'robust':
         model = eval(arch)(pretrained=True).cuda()
         model.eval()
@@ -24,14 +33,39 @@ def load_model(arch, dataset=None):
         model = model.module.model
     return model
 
-def load_dataset(dataset, batch_size, num_workers, data_path='./data'):
+def load_dataset(dataset, batch_size, num_workers=1, data_path='./data'):
+    '''
+    Load pretrained model with specified architecture.
+    Args:
+        dataset (str): name of one of dataset 
+                      ('restricted_imagenet' or 'imagenet')
+        batch_size (int): batch size
+        num_workers (int): number of workers
+        data_path (str): path to data
+    Returns:
+        ds: dataset object
+        loader: dataset loader
+        norm: normalization function for dataset
+        label_map: label map (class numbers to names) for dataset
+    '''
+    
     ds = DATASETS[dataset](data_path)
     _, loader = ds.make_loaders(num_workers, batch_size)
-    norm = helpers.InputNormalize(ds.mean, ds.std)
-    CD = CLASS_DICT['ImageNet'] if dataset == 'imagenet' else CLASS_DICT['RestrictedImageNet']
-    return ds, loader, norm, CD
+    normalization = helpers.InputNormalize(ds.mean, ds.std)
+    label_map = CLASS_DICT['ImageNet'] if dataset == 'imagenet' else CLASS_DICT['RestrictedImageNet']
+    return ds, loader, normalization, label_map
 
 def forward_pass(mod, im, normalization=None):
+    '''
+    Compute model output (logits) for a batch of inputs.
+    Args:
+        mod: model
+        im (tensor): batch of images
+        normalization (function): normalization function to be applied on inputs
+        
+    Returns:
+        op: logits of model for given inputs
+    '''
     if normalization is not None:
         im_norm = normalization(im)
     else:
@@ -40,7 +74,18 @@ def forward_pass(mod, im, normalization=None):
     return op
 
 def get_gradient(mod, im, targ, normalization, custom_loss=None):
-    
+    '''
+    Compute model gradients w.r.t. inputs.
+    Args:
+        mod: model
+        im (tensor): batch of images
+        normalization (function): normalization function to be applied on inputs
+        custom_loss (function): custom loss function to employ (optional)
+        
+    Returns:
+        grad: model gradients w.r.t. inputs
+        loss: model loss evaluated at inputs
+    '''    
     def compute_loss(inp, target, normalization):
         if custom_loss is None:
             output = forward_pass(mod, inp, normalization)
@@ -54,13 +99,35 @@ def get_gradient(mod, im, targ, normalization, custom_loss=None):
     return grad.clone(), loss.detach().item()
 
 def visualize_gradient(t):
+    '''
+    Visualize gradients of model. To transform gradient to image range [0, 1], we 
+    subtract the mean, divide by 3 standard deviations, and then clip.
+    
+    Args:
+        t (tensor): input tensor (usually gradients)
+    '''  
     mt = ch.mean(t, dim=[2, 3], keepdim=True).expand_as(t)
     st = ch.std(t, dim=[2, 3], keepdim=True).expand_as(t)
     return ch.clamp((t - mt) / (3 * st) + 0.5, 0, 1) 
 
 def L2PGD(mod, im, targ, normalization, step_size, Nsteps,
         eps=None, targeted=True, custom_loss=None):
-    
+    '''
+    Compute L2 adversarial examples for given model.
+    Args:
+        mod: model
+        im (tensor): batch of images
+        targ (tensor): batch of labels
+        normalization (function): normalization function to be applied on inputs
+        step_size (float): optimization step size
+        Nsteps (int): number of optimization steps
+        eps (float): radius of L2 ball
+        targeted (bool): True if we want to maximize loss, else False
+        custom_loss (function): custom loss function to employ (optional)
+        
+    Returns:
+        x: batch of adversarial examples for input images
+    '''      
     if custom_loss is None:
         loss_fn = ch.nn.CrossEntropyLoss()
     else:
@@ -96,6 +163,20 @@ def L2PGD(mod, im, targ, normalization, step_size, Nsteps,
     return x
 
 def get_features(mod, im, normalization):
+    '''
+    Get feature representation of model  (output of layer before final linear 
+    classifier) for given inputs.
+    
+    Args:
+        mod: model
+        im (tensor): batch of images
+        targ (tensor): batch of labels
+        normalization (function): normalization function to be applied on inputs
+        
+    Returns:
+        features: batch of features for input images
+    '''   
     feature_rep = ch.nn.Sequential(*list(mod.children())[:-1])
     im_norm = normalization(im.cpu()).cuda()
-    return feature_rep(im_norm)[:, :, 0, 0]
+    features = feature_rep(im_norm)[:, :, 0, 0]
+    return features
