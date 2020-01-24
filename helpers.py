@@ -4,7 +4,7 @@ from robustness.tools import helpers
 from robustness.datasets import DATASETS
 from robustness.tools.label_maps import CLASS_DICT
 from robustness import model_utils, datasets
-from tqdm import tqdm
+from tqdm.autonotebook import tqdm
 
 def load_model(arch, dataset=None):
     '''
