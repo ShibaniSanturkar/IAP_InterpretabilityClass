@@ -49,7 +49,7 @@ def get_gradient(mod, im, targ, normalization, custom_loss=None):
             return custom_loss(mod, inp, target.cuda(), normalization)
         
     x = im.clone().detach().requires_grad_(True)
-    loss = compute_loss(x, targ)
+    loss = compute_loss(x, targ, normalization)
     grad, = ch.autograd.grad(loss, [x])
     return grad.clone(), loss.detach().item()
 
